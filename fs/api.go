@@ -194,6 +194,11 @@ type InodeEmbedder interface {
 	EmbeddedInode() *Inode
 }
 
+// NodeForgetter invalidates cached node data
+type NodeForgetter interface {
+	Forget()
+}
+
 // Statfs implements statistics for the filesystem that holds this
 // Inode. If not defined, the `out` argument will zeroed with an OK
 // result.  This is because OSX filesystems must Statfs, or the mount

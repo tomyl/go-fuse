@@ -464,6 +464,9 @@ func (b *rawBridge) Create(cancel <-chan struct{}, input *fuse.CreateIn, name st
 func (b *rawBridge) Forget(nodeid, nlookup uint64) {
 	n, _ := b.inode(nodeid, 0)
 	n.removeRef(nlookup, false)
+	if fops, ok := n.ops.(NodeForgetter); ok {
+		fops.Forget()
+	}
 }
 
 func (b *rawBridge) SetDebug(debug bool) {}
