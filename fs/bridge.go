@@ -1012,7 +1012,15 @@ func (b *rawBridge) ReadDirPlus(cancel <-chan struct{}, input *fuse.ReadIn, out 
 			continue
 		}
 
-		child, errno := b.lookup(ctx, n, e.Name, entryOut)
+		var child *Inode
+
+		if e.Child != nil && e.EntryOut != nil {
+			child = e.Child.(*Inode)
+			*entryOut = *e.EntryOut
+		} else {
+			child, errno = b.lookup(ctx, n, e.Name, entryOut)
+		}
+
 		if errno != 0 {
 			if b.options.NegativeTimeout != nil {
 				entryOut.SetEntryTimeout(*b.options.NegativeTimeout)

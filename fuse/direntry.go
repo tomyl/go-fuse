@@ -27,6 +27,9 @@ type DirEntry struct {
 
 	// Ino is the inode number.
 	Ino uint64
+
+	Child    interface{}
+	EntryOut *EntryOut
 }
 
 func (d DirEntry) String() string {
