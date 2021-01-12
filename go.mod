@@ -1,4 +1,4 @@
-module github.com/hanwen/go-fuse/v2
+module github.com/tomyl/go-fuse
 
 require (
 	github.com/hanwen/go-fuse v1.0.0
