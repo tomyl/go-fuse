@@ -15,8 +15,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/hanwen/go-fuse/v2/fs"
-	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/tomyl/go-fuse/fs"
+	"github.com/tomyl/go-fuse/fuse"
 )
 
 type zipRoot struct {

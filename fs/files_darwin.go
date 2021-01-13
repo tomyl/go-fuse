@@ -4,7 +4,7 @@
 
 package fs
 
-import "github.com/hanwen/go-fuse/v2/fuse"
+import "github.com/tomyl/go-fuse/fuse"
 
 func setBlocks(out *fuse.Attr) {
 }

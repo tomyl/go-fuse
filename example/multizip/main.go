@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fs"
-	"github.com/hanwen/go-fuse/v2/zipfs"
+	"github.com/tomyl/go-fuse/fs"
+	"github.com/tomyl/go-fuse/zipfs"
 )
 
 func main() {

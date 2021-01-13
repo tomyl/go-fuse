@@ -11,9 +11,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fuse/nodefs"
-	"github.com/hanwen/go-fuse/v2/fuse/pathfs"
-	"github.com/hanwen/go-fuse/v2/unionfs"
+	"github.com/tomyl/go-fuse/fuse/nodefs"
+	"github.com/tomyl/go-fuse/fuse/pathfs"
+	"github.com/tomyl/go-fuse/unionfs"
 )
 
 func main() {

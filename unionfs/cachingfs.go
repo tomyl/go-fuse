@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/hanwen/go-fuse/v2/fuse/nodefs"
-	"github.com/hanwen/go-fuse/v2/fuse/pathfs"
+	"github.com/tomyl/go-fuse/fuse"
+	"github.com/tomyl/go-fuse/fuse/nodefs"
+	"github.com/tomyl/go-fuse/fuse/pathfs"
 )
 
 const _XATTRSEP = "@XATTR@"

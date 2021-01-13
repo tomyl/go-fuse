@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/hanwen/go-fuse/v2/internal/testutil"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/tomyl/go-fuse/fuse"
+	"github.com/tomyl/go-fuse/internal/testutil"
 	"golang.org/x/sys/unix"
 )
 

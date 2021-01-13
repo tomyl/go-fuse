@@ -12,8 +12,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/hanwen/go-fuse/v2/internal/utimens"
+	"github.com/tomyl/go-fuse/fuse"
+	"github.com/tomyl/go-fuse/internal/utimens"
 )
 
 func (n *loopbackNode) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, syscall.Errno) {

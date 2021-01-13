@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/hanwen/go-fuse/v2/fuse/nodefs"
-	"github.com/hanwen/go-fuse/v2/internal/testutil"
+	"github.com/tomyl/go-fuse/fuse"
+	"github.com/tomyl/go-fuse/fuse/nodefs"
+	"github.com/tomyl/go-fuse/internal/testutil"
 )
 
 type rootNode struct {
