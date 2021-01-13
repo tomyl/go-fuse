@@ -9,10 +9,10 @@ import (
 	"syscall"
 )
 
-func (ms *Server) systemWrite(req *request, header []byte) Status {
+func (ms *Server) systemWrite(fd int, req *request, header []byte) (status Status) {
 	if req.flatDataSize() == 0 {
 		err := handleEINTR(func() error {
-			_, err := syscall.Write(ms.mountFd, header)
+			_, err := syscall.Write(fd, header)
 			return err
 		})
 		return ToStatus(err)
@@ -20,7 +20,7 @@ func (ms *Server) systemWrite(req *request, header []byte) Status {
 
 	if req.fdData != nil {
 		if ms.canSplice {
-			err := ms.trySplice(header, req, req.fdData)
+			err := ms.trySplice(fd, header, req, req.fdData)
 			if err == nil {
 				req.readResult.Done()
 				return OK
@@ -34,7 +34,7 @@ func (ms *Server) systemWrite(req *request, header []byte) Status {
 		header = req.serializeHeader(len(req.flatData))
 	}
 
-	_, err := writev(ms.mountFd, [][]byte{header, req.flatData})
+	_, err := writev(fd, [][]byte{header, req.flatData})
 	if req.readResult != nil {
 		req.readResult.Done()
 	}

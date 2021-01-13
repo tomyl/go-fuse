@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -34,7 +35,7 @@ type Server struct {
 	writeMu sync.Mutex
 
 	// I/O with kernel and daemon.
-	mountFd int
+	fds []int
 
 	latencies LatencyMap
 
@@ -137,6 +138,9 @@ func NewServer(fs RawFileSystem, mountPoint string, opts *MountOptions) (*Server
 	}
 	o := *opts
 
+	if o.Connections < 1 {
+		o.Connections = 1
+	}
 	if o.MaxWrite < 0 {
 		o.MaxWrite = 0
 	}
@@ -195,17 +199,25 @@ func NewServer(fs RawFileSystem, mountPoint string, opts *MountOptions) (*Server
 	}
 
 	ms.mountPoint = mountPoint
-	ms.mountFd = fd
+	ms.fds = []int{fd}
 
-	if code := ms.handleInit(); !code.Ok() {
+	if code := ms.handleInit(fd); !code.Ok() {
 		syscall.Close(fd)
 		// TODO - unmount as well?
 		return nil, fmt.Errorf("init: %s", code)
 	}
 
+	for len(ms.fds) < o.Connections {
+		workerFd, err := cloneFuseConnection(fd)
+		if err != nil {
+			return nil, err
+		}
+		ms.fds = append(ms.fds, workerFd)
+	}
+
 	// This prepares for Serve being called somewhere, either
 	// synchronously or asynchronously.
-	ms.loops.Add(1)
+	ms.loops.Add(len(ms.fds))
 	return ms, nil
 }
 
@@ -262,12 +274,12 @@ func handleEINTR(fn func() error) (err error) {
 
 // Returns a new request, or error. In case exitIdle is given, returns
 // nil, OK if we have too many readers already.
-func (ms *Server) readRequest(exitIdle bool) (req *request, code Status) {
+func (ms *Server) readRequest(fd int, exitIdle bool) (req *request, code Status) {
 	req = ms.reqPool.Get().(*request)
 	dest := ms.readPool.Get().([]byte)
 
 	ms.reqMu.Lock()
-	if ms.reqReaders > _MAX_READERS {
+	if exitIdle && ms.reqReaders > _MAX_READERS*len(ms.fds) {
 		ms.reqMu.Unlock()
 		return nil, OK
 	}
@@ -277,7 +289,7 @@ func (ms *Server) readRequest(exitIdle bool) (req *request, code Status) {
 	var n int
 	err := handleEINTR(func() error {
 		var err error
-		n, err = syscall.Read(ms.mountFd, dest)
+		n, err = syscall.Read(fd, dest)
 		return err
 	})
 	if err != nil {
@@ -309,7 +321,7 @@ func (ms *Server) readRequest(exitIdle bool) (req *request, code Status) {
 	ms.reqReaders--
 	if !ms.singleReader && ms.reqReaders <= 0 {
 		ms.loops.Add(1)
-		go ms.loop(true)
+		go ms.loop(fd, true)
 	}
 
 	return req, OK
@@ -364,11 +376,15 @@ func (ms *Server) recordStats(req *request) {
 //
 // Each filesystem operation executes in a separate goroutine.
 func (ms *Server) Serve() {
-	ms.loop(false)
+	for _, fd := range ms.fds {
+		go ms.loop(fd, false)
+	}
 	ms.loops.Wait()
 
 	ms.writeMu.Lock()
-	syscall.Close(ms.mountFd)
+	for _, fd := range ms.fds {
+		syscall.Close(fd)
+	}
 	ms.writeMu.Unlock()
 
 	// shutdown in-flight cache retrieves.
@@ -395,18 +411,18 @@ func (ms *Server) Wait() {
 	ms.loops.Wait()
 }
 
-func (ms *Server) handleInit() Status {
+func (ms *Server) handleInit(fd int) Status {
 	// The first request should be INIT; read it synchronously,
 	// and don't spawn new readers.
 	orig := ms.singleReader
 	ms.singleReader = true
-	req, errNo := ms.readRequest(false)
+	req, errNo := ms.readRequest(fd, false)
 	ms.singleReader = orig
 
 	if errNo != OK || req == nil {
 		return errNo
 	}
-	if code := ms.handleRequest(req); !code.Ok() {
+	if code := ms.handleRequest(fd, req); !code.Ok() {
 		return code
 	}
 
@@ -416,11 +432,13 @@ func (ms *Server) handleInit() Status {
 	return OK
 }
 
-func (ms *Server) loop(exitIdle bool) {
-	defer ms.loops.Done()
+func (ms *Server) loop(fd int, exitIdle bool) {
+	defer func() {
+		ms.loops.Done()
+	}()
 exit:
 	for {
-		req, errNo := ms.readRequest(exitIdle)
+		req, errNo := ms.readRequest(fd, exitIdle)
 		switch errNo {
 		case OK:
 			if req == nil {
@@ -435,19 +453,19 @@ exit:
 			}
 			break exit
 		default: // some other error?
-			log.Printf("Failed to read from fuse conn: %v", errNo)
+			log.Printf("Failed to read from fuse conn %d: %v", fd, errNo)
 			break exit
 		}
 
 		if ms.singleReader {
-			go ms.handleRequest(req)
+			go ms.handleRequest(fd, req)
 		} else {
-			ms.handleRequest(req)
+			ms.handleRequest(fd, req)
 		}
 	}
 }
 
-func (ms *Server) handleRequest(req *request) Status {
+func (ms *Server) handleRequest(fd int, req *request) Status {
 	if ms.opts.SingleThreaded {
 		ms.requestProcessingMu.Lock()
 		defer ms.requestProcessingMu.Unlock()
@@ -472,10 +490,10 @@ func (ms *Server) handleRequest(req *request) Status {
 		req.handler.Func(ms, req)
 	}
 
-	errNo := ms.write(req)
+	errNo := ms.write(fd, req)
 	if errNo != 0 {
-		log.Printf("writer: Write/Writev failed, err: %v. opcode: %v",
-			errNo, operationName(req.inHeader.Opcode))
+		log.Printf("writer: Write/Writev failed, fd: %d, err: %v. opcode: %v",
+			fd, errNo, operationName(req.inHeader.Opcode))
 	}
 	ms.returnRequest(req)
 	return Status(errNo)
@@ -505,7 +523,7 @@ func (ms *Server) allocOut(req *request, size uint32) []byte {
 	return req.bufferPoolOutputBuf
 }
 
-func (ms *Server) write(req *request) Status {
+func (ms *Server) write(fd int, req *request) Status {
 	// Forget/NotifyReply do not wait for reply from filesystem server.
 	switch req.inHeader.Opcode {
 	case _OP_FORGET, _OP_BATCH_FORGET, _OP_NOTIFY_REPLY:
@@ -525,7 +543,7 @@ func (ms *Server) write(req *request) Status {
 		return OK
 	}
 
-	s := ms.systemWrite(req, header)
+	s := ms.systemWrite(fd, req, header)
 	return s
 }
 
@@ -551,7 +569,8 @@ func (ms *Server) InodeNotify(node uint64, off int64, length int64) Status {
 
 	// Protect against concurrent close.
 	ms.writeMu.Lock()
-	result := ms.write(&req)
+	fd := ms.fds[rand.Intn(len(ms.fds))]
+	result := ms.write(fd, &req)
 	ms.writeMu.Unlock()
 
 	if ms.opts.Debug {
@@ -610,7 +629,8 @@ func (ms *Server) inodeNotifyStoreCache32(node uint64, offset int64, data []byte
 
 	// Protect against concurrent close.
 	ms.writeMu.Lock()
-	result := ms.write(&req)
+	fd := ms.fds[rand.Intn(len(ms.fds))]
+	result := ms.write(fd, &req)
 	ms.writeMu.Unlock()
 
 	if ms.opts.Debug {
@@ -702,7 +722,8 @@ func (ms *Server) inodeRetrieveCache1(node uint64, offset int64, dest []byte) (n
 
 	// Protect against concurrent close.
 	ms.writeMu.Lock()
-	result := ms.write(&req)
+	fd := ms.fds[rand.Intn(len(ms.fds))]
+	result := ms.write(fd, &req)
 	ms.writeMu.Unlock()
 
 	if ms.opts.Debug {
@@ -777,7 +798,8 @@ func (ms *Server) DeleteNotify(parent uint64, child uint64, name string) Status 
 
 	// Protect against concurrent close.
 	ms.writeMu.Lock()
-	result := ms.write(&req)
+	fd := ms.fds[rand.Intn(len(ms.fds))]
+	result := ms.write(fd, &req)
 	ms.writeMu.Unlock()
 
 	if ms.opts.Debug {
@@ -813,7 +835,8 @@ func (ms *Server) EntryNotify(parent uint64, name string) Status {
 
 	// Protect against concurrent close.
 	ms.writeMu.Lock()
-	result := ms.write(&req)
+	fd := ms.fds[rand.Intn(len(ms.fds))]
+	result := ms.write(fd, &req)
 	ms.writeMu.Unlock()
 
 	if ms.opts.Debug {
