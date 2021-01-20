@@ -16,6 +16,11 @@ import (
 	"unsafe"
 )
 
+const (
+	// The kernel caps writes at 1024KiB since Linux 4.2.0
+	MAX_KERNEL_WRITE = 1024 * 1024
+)
+
 func unixgramSocketpair() (l, r *os.File, err error) {
 	fd, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
 	if err != nil {
