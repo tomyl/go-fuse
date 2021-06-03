@@ -46,8 +46,11 @@ var _ = (FileAllocater)((*loopbackFile)(nil))
 func (f *loopbackFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	r := fuse.ReadResultFd(uintptr(f.fd), off, len(buf))
-	return r, OK
+	n, err := syscall.Pread(f.fd, buf, off)
+	if err != nil {
+		return nil, ToErrno(err)
+	}
+	return fuse.ReadResultData(buf[:n]), OK
 }
 
 func (f *loopbackFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {

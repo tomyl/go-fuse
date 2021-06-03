@@ -23,7 +23,7 @@ import (
 )
 
 func TestRenameAtomic(t *testing.T) {
-	tc := newTestCase(t, &testOptions{attrCache: true, entryCache: true})
+	tc := newTestCase(t, &testOptions{})
 	defer tc.Clean()
 
 	srcPath := filepath.Join(tc.mntDir, "src")
