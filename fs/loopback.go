@@ -313,6 +313,9 @@ func (n *LoopbackNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *LoopbackNode) Open(ctx context.Context, flags uint32) (fh FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	if n.Orphan() {
+		return nil, 0, syscall.EINTR
+	}
 	flags = flags &^ syscall.O_APPEND
 	p := n.path()
 	f, err := syscall.Open(p, int(flags), 0)

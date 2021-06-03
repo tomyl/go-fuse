@@ -318,9 +318,6 @@ func (b *rawBridge) inode(id uint64, fh uint64) (*Inode, *fileEntry) {
 }
 
 func (b *rawBridge) Lookup(cancel <-chan struct{}, header *fuse.InHeader, name string, out *fuse.EntryOut) fuse.Status {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	parent, _ := b.inode(header.NodeId, 0)
 	ctx := &fuse.Context{Caller: header.Caller, Cancel: cancel}
 	child, errno := b.lookup(ctx, parent, name, out)
@@ -467,9 +464,6 @@ func (b *rawBridge) Create(cancel <-chan struct{}, input *fuse.CreateIn, name st
 }
 
 func (b *rawBridge) Forget(nodeid, nlookup uint64) {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	n, _ := b.inode(nodeid, 0)
 	n.removeRef(nlookup, false)
 }
@@ -477,9 +471,6 @@ func (b *rawBridge) Forget(nodeid, nlookup uint64) {
 func (b *rawBridge) SetDebug(debug bool) {}
 
 func (b *rawBridge) GetAttr(cancel <-chan struct{}, input *fuse.GetAttrIn, out *fuse.AttrOut) fuse.Status {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	n, fEntry := b.inode(input.NodeId, input.Fh())
 	f := fEntry.file
 	if f == nil {
@@ -546,12 +537,7 @@ func (b *rawBridge) SetAttr(cancel <-chan struct{}, in *fuse.SetAttrIn, out *fus
 	return errnoToStatus(errno)
 }
 
-var renameLock sync.Mutex
-
 func (b *rawBridge) Rename(cancel <-chan struct{}, input *fuse.RenameIn, oldName string, newName string) fuse.Status {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	p1, _ := b.inode(input.NodeId, 0)
 	p2, _ := b.inode(input.Newdir, 0)
 
@@ -682,9 +668,6 @@ func (b *rawBridge) RemoveXAttr(cancel <-chan struct{}, header *fuse.InHeader, a
 }
 
 func (b *rawBridge) Open(cancel <-chan struct{}, input *fuse.OpenIn, out *fuse.OpenOut) fuse.Status {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	n, _ := b.inode(input.NodeId, 0)
 
 	if op, ok := n.ops.(NodeOpener); ok {
@@ -726,9 +709,6 @@ func (b *rawBridge) registerFile(n *Inode, f FileHandle, flags uint32) uint32 {
 }
 
 func (b *rawBridge) Read(cancel <-chan struct{}, input *fuse.ReadIn, buf []byte) (fuse.ReadResult, fuse.Status) {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	n, f := b.inode(input.NodeId, input.Fh)
 
 	if fops, ok := n.ops.(NodeReader); ok {
@@ -777,9 +757,6 @@ func (b *rawBridge) SetLkw(cancel <-chan struct{}, input *fuse.LkIn) fuse.Status
 }
 
 func (b *rawBridge) Release(cancel <-chan struct{}, input *fuse.ReleaseIn) {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	n, f := b.releaseFileEntry(input.NodeId, input.Fh)
 	if f == nil {
 		return

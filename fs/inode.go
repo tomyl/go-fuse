@@ -312,6 +312,26 @@ func (n *Inode) Path(root *Inode) string {
 	return path
 }
 
+func (n *Inode) Orphan() bool {
+	root := n.Root()
+	p := n
+	for p != nil && p != root {
+		// We don't try to take all locks at the same time, because
+		// the caller won't use the "path" string under lock anyway.
+		p.mu.Lock()
+		// Get last known parent
+		pd := p.parents.get()
+		p.mu.Unlock()
+		if pd == nil {
+			p = nil
+			break
+		}
+		p = pd.parent
+	}
+
+	return root != nil && root != p
+}
+
 // setEntry does `iparent[name] = ichild` linking.
 //
 // setEntry must not be called simultaneously for any of iparent or ichild.
