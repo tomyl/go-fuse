@@ -6,6 +6,7 @@ package fs
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -197,8 +198,40 @@ func (n *LoopbackNode) Rename(ctx context.Context, name string, newParent InodeE
 	p1 := filepath.Join(n.path(), name)
 	p2 := filepath.Join(n.RootData.Path, newParent.EmbeddedInode().Path(nil), newName)
 
+	if os.Getenv("GOFUSE_LOOPBACK_RENAME") == "copy" {
+		if err := copyFileContents(p1, p2); err != nil {
+			return ToErrno(err)
+		}
+
+		err := syscall.Unlink(p1)
+		return ToErrno(err)
+	}
+
 	err := syscall.Rename(p1, p2)
 	return ToErrno(err)
+}
+
+func copyFileContents(src, dst string) (err error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer func() {
+		cerr := out.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+	if _, err = io.Copy(out, in); err != nil {
+		return
+	}
+	err = out.Sync()
+	return
 }
 
 var _ = (NodeCreater)((*LoopbackNode)(nil))
