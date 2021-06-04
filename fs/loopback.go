@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sync"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -115,9 +114,6 @@ func (n *LoopbackNode) path() (string, bool) {
 }
 
 func (n *LoopbackNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*Inode, syscall.Errno) {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	path, ok := n.path()
 	if !ok {
 		return nil, syscall.EINTR
@@ -224,12 +220,7 @@ func (n *LoopbackNode) Unlink(ctx context.Context, name string) syscall.Errno {
 	return ToErrno(err)
 }
 
-var renameLock sync.Mutex
-
 func (n *LoopbackNode) Rename(ctx context.Context, name string, newParent InodeEmbedder, newName string, flags uint32) syscall.Errno {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	if flags&RENAME_EXCHANGE != 0 {
 		return n.renameExchange(name, newParent, newName)
 	}
@@ -384,9 +375,6 @@ func (n *LoopbackNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *LoopbackNode) Open(ctx context.Context, flags uint32) (fh FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	flags = flags &^ syscall.O_APPEND
 	path, ok := n.path()
 	if !ok {
@@ -394,14 +382,6 @@ func (n *LoopbackNode) Open(ctx context.Context, flags uint32) (fh FileHandle, f
 	}
 	f, err := syscall.Open(path, int(flags), 0)
 	if err != nil {
-		/*
-			if errors.Is(err, syscall.ENOENT) {
-				_, ok = n.path()
-				if !ok {
-					return nil, 0, syscall.EINTR
-				}
-			}
-		*/
 		return nil, 0, ToErrno(err)
 	}
 	lf := NewLoopbackFile(f)
@@ -430,9 +410,6 @@ func (n *LoopbackNode) Readdir(ctx context.Context) (DirStream, syscall.Errno) {
 }
 
 func (n *LoopbackNode) Getattr(ctx context.Context, f FileHandle, out *fuse.AttrOut) syscall.Errno {
-	renameLock.Lock()
-	defer renameLock.Unlock()
-
 	if f != nil {
 		return f.(FileGetattrer).Getattr(ctx, out)
 	}

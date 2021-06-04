@@ -44,8 +44,6 @@ var _ = (FileSetattrer)((*loopbackFile)(nil))
 var _ = (FileAllocater)((*loopbackFile)(nil))
 
 func (f *loopbackFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
-	renameLock.Lock()
-	defer renameLock.Unlock()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n, err := syscall.Pread(f.fd, buf, off)

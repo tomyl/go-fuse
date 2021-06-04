@@ -701,8 +701,10 @@ func (b *rawBridge) registerFile(n *Inode, f FileHandle, flags uint32) uint32 {
 	}
 
 	fileEntry := b.files[fh]
+	fileEntry.mu.Lock()
 	fileEntry.nodeIndex = len(n.openFiles)
 	fileEntry.file = f
+	fileEntry.mu.Unlock()
 
 	n.openFiles = append(n.openFiles, fh)
 	return fh
@@ -715,10 +717,13 @@ func (b *rawBridge) Read(cancel <-chan struct{}, input *fuse.ReadIn, buf []byte)
 		res, errno := fops.Read(&fuse.Context{Caller: input.Caller, Cancel: cancel}, f.file, buf, int64(input.Offset))
 		return res, errnoToStatus(errno)
 	}
+	f.mu.Lock()
 	if fr, ok := f.file.(FileReader); ok {
+		f.mu.Unlock()
 		res, errno := fr.Read(&fuse.Context{Caller: input.Caller, Cancel: cancel}, buf, int64(input.Offset))
 		return res, errnoToStatus(errno)
 	}
+	f.mu.Unlock()
 
 	return nil, fuse.ENOTSUP
 }

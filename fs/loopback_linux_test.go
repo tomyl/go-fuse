@@ -22,7 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestRenameAtomic(t *testing.T) {
+func TestRenameAtomic1(t *testing.T) {
 	tc := newTestCase(t, &testOptions{})
 	defer tc.Clean()
 
