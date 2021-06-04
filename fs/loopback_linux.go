@@ -15,27 +15,47 @@ import (
 )
 
 func (n *LoopbackNode) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, syscall.Errno) {
-	sz, err := unix.Lgetxattr(n.path(), attr, dest)
+	path, ok := n.path()
+	if !ok {
+		return 0, syscall.EINTR
+	}
+	sz, err := unix.Lgetxattr(path, attr, dest)
 	return uint32(sz), ToErrno(err)
 }
 
 func (n *LoopbackNode) Setxattr(ctx context.Context, attr string, data []byte, flags uint32) syscall.Errno {
-	err := unix.Lsetxattr(n.path(), attr, data, int(flags))
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+	err := unix.Lsetxattr(path, attr, data, int(flags))
 	return ToErrno(err)
 }
 
 func (n *LoopbackNode) Removexattr(ctx context.Context, attr string) syscall.Errno {
-	err := unix.Lremovexattr(n.path(), attr)
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+	err := unix.Lremovexattr(path, attr)
 	return ToErrno(err)
 }
 
 func (n *LoopbackNode) Listxattr(ctx context.Context, dest []byte) (uint32, syscall.Errno) {
-	sz, err := unix.Llistxattr(n.path(), dest)
+	path, ok := n.path()
+	if !ok {
+		return 0, syscall.EINTR
+	}
+	sz, err := unix.Llistxattr(path, dest)
 	return uint32(sz), ToErrno(err)
 }
 
 func (n *LoopbackNode) renameExchange(name string, newparent InodeEmbedder, newName string) syscall.Errno {
-	fd1, err := syscall.Open(n.path(), syscall.O_DIRECTORY, 0)
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+	fd1, err := syscall.Open(path, syscall.O_DIRECTORY, 0)
 	if err != nil {
 		return ToErrno(err)
 	}

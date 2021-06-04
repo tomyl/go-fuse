@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -274,6 +275,17 @@ func (n *Inode) Operations() InodeEmbedder {
 // If you set `root`, Path() warns if it finds an orphaned Inode, i.e.
 // if it does not end up at `root` after walking the hierarchy.
 func (n *Inode) Path(root *Inode) string {
+	path, ok := n.Path2(root)
+	if !ok {
+		deletedPlaceholder := fmt.Sprintf(".go-fuse.%d/deleted", rand.Uint64())
+		n.bridge.logf("warning: Inode.Path: n%d is orphaned, replacing segment with %q",
+			n.nodeId, deletedPlaceholder)
+		return filepath.Join(path, deletedPlaceholder)
+	}
+	return path
+}
+
+func (n *Inode) Path2(root *Inode) (string, bool) { // TODO: better name
 	var segments []string
 	p := n
 	for p != nil && p != root {
@@ -291,14 +303,6 @@ func (n *Inode) Path(root *Inode) string {
 		p = pd.parent
 	}
 
-	if root != nil && root != p {
-		deletedPlaceholder := fmt.Sprintf(".go-fuse.%d/deleted", rand.Uint64())
-		n.bridge.logf("warning: Inode.Path: n%d is orphaned, replacing segment with %q",
-			n.nodeId, deletedPlaceholder)
-		// NOSUBMIT - should replace rather than append?
-		segments = append(segments, deletedPlaceholder)
-	}
-
 	i := 0
 	j := len(segments) - 1
 
@@ -309,27 +313,8 @@ func (n *Inode) Path(root *Inode) string {
 	}
 
 	path := strings.Join(segments, "/")
-	return path
-}
-
-func (n *Inode) Orphan() bool {
-	root := n.Root()
-	p := n
-	for p != nil && p != root {
-		// We don't try to take all locks at the same time, because
-		// the caller won't use the "path" string under lock anyway.
-		p.mu.Lock()
-		// Get last known parent
-		pd := p.parents.get()
-		p.mu.Unlock()
-		if pd == nil {
-			p = nil
-			break
-		}
-		p = pd.parent
-	}
-
-	return root != nil && root != p
+	ok := root == nil || root == p
+	return path, ok
 }
 
 // setEntry does `iparent[name] = ichild` linking.

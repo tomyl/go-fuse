@@ -6,8 +6,8 @@ package fs
 
 import (
 	"context"
-	"errors"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -94,7 +94,11 @@ var _ = (NodeRenamer)((*LoopbackNode)(nil))
 
 func (n *LoopbackNode) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
 	s := syscall.Statfs_t{}
-	err := syscall.Statfs(n.path(), &s)
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+	err := syscall.Statfs(path, &s)
 	if err != nil {
 		return ToErrno(err)
 	}
@@ -104,13 +108,18 @@ func (n *LoopbackNode) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.
 
 // path returns the full path to the file in the underlying file
 // system.
-func (n *LoopbackNode) path() string {
-	path := n.Path(n.Root())
-	return filepath.Join(n.RootData.Path, path)
+func (n *LoopbackNode) path() (string, bool) {
+	path, ok := n.Path2(n.Root())
+	return filepath.Join(n.RootData.Path, path), ok
 }
 
 func (n *LoopbackNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*Inode, syscall.Errno) {
-	p := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return nil, syscall.EINTR
+	}
+
+	p := filepath.Join(path, name)
 
 	st := syscall.Stat_t{}
 	err := syscall.Lstat(p, &st)
@@ -138,7 +147,12 @@ func (n *LoopbackNode) preserveOwner(ctx context.Context, path string) error {
 }
 
 func (n *LoopbackNode) Mknod(ctx context.Context, name string, mode, rdev uint32, out *fuse.EntryOut) (*Inode, syscall.Errno) {
-	p := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return nil, syscall.EINTR
+	}
+
+	p := filepath.Join(path, name)
 	err := syscall.Mknod(p, mode, int(rdev))
 	if err != nil {
 		return nil, ToErrno(err)
@@ -159,7 +173,12 @@ func (n *LoopbackNode) Mknod(ctx context.Context, name string, mode, rdev uint32
 }
 
 func (n *LoopbackNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*Inode, syscall.Errno) {
-	p := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return nil, syscall.EINTR
+	}
+
+	p := filepath.Join(path, name)
 	err := os.Mkdir(p, os.FileMode(mode))
 	if err != nil {
 		return nil, ToErrno(err)
@@ -180,13 +199,23 @@ func (n *LoopbackNode) Mkdir(ctx context.Context, name string, mode uint32, out 
 }
 
 func (n *LoopbackNode) Rmdir(ctx context.Context, name string) syscall.Errno {
-	p := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+
+	p := filepath.Join(path, name)
 	err := syscall.Rmdir(p)
 	return ToErrno(err)
 }
 
 func (n *LoopbackNode) Unlink(ctx context.Context, name string) syscall.Errno {
-	p := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+
+	p := filepath.Join(path, name)
 	err := syscall.Unlink(p)
 	return ToErrno(err)
 }
@@ -196,11 +225,26 @@ func (n *LoopbackNode) Rename(ctx context.Context, name string, newParent InodeE
 		return n.renameExchange(name, newParent, newName)
 	}
 
-	p1 := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+
+	p1 := filepath.Join(path, name)
 	p2 := filepath.Join(n.RootData.Path, newParent.EmbeddedInode().Path(nil), newName)
 
 	if os.Getenv("GOFUSE_LOOPBACK_RENAME") == "copy" {
 		if err := copyFileContents(p1, p2); err != nil {
+			return ToErrno(err)
+		}
+
+		err := syscall.Unlink(p1)
+		return ToErrno(err)
+	}
+
+	if os.Getenv("GOFUSE_LOOPBACK_RENAME") == "copy2" {
+		srcData := []byte("source data")
+		if err := ioutil.WriteFile(p2, srcData, 0600); err != nil {
 			return ToErrno(err)
 		}
 
@@ -238,7 +282,12 @@ func copyFileContents(src, dst string) (err error) {
 var _ = (NodeCreater)((*LoopbackNode)(nil))
 
 func (n *LoopbackNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (inode *Inode, fh FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	p := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return nil, nil, 0, syscall.EINTR
+	}
+
+	p := filepath.Join(path, name)
 	flags = flags &^ syscall.O_APPEND
 	fd, err := syscall.Open(p, int(flags)|os.O_CREATE, mode)
 	if err != nil {
@@ -260,7 +309,12 @@ func (n *LoopbackNode) Create(ctx context.Context, name string, flags uint32, mo
 }
 
 func (n *LoopbackNode) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (*Inode, syscall.Errno) {
-	p := filepath.Join(n.path(), name)
+	path, ok := n.path()
+	if !ok {
+		return nil, syscall.EINTR
+	}
+
+	p := filepath.Join(path, name)
 	err := syscall.Symlink(target, p)
 	if err != nil {
 		return nil, ToErrno(err)
@@ -279,8 +333,12 @@ func (n *LoopbackNode) Symlink(ctx context.Context, target, name string, out *fu
 }
 
 func (n *LoopbackNode) Link(ctx context.Context, target InodeEmbedder, name string, out *fuse.EntryOut) (*Inode, syscall.Errno) {
+	path, ok := n.path()
+	if !ok {
+		return nil, syscall.EINTR
+	}
 
-	p := filepath.Join(n.path(), name)
+	p := filepath.Join(path, name)
 	err := syscall.Link(filepath.Join(n.RootData.Path, target.EmbeddedInode().Path(nil)), p)
 	if err != nil {
 		return nil, ToErrno(err)
@@ -298,7 +356,10 @@ func (n *LoopbackNode) Link(ctx context.Context, target InodeEmbedder, name stri
 }
 
 func (n *LoopbackNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
-	p := n.path()
+	p, ok := n.path()
+	if !ok {
+		return nil, syscall.EINTR
+	}
 
 	for l := 256; ; l *= 2 {
 		buf := make([]byte, l)
@@ -315,12 +376,20 @@ func (n *LoopbackNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 
 func (n *LoopbackNode) Open(ctx context.Context, flags uint32) (fh FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	flags = flags &^ syscall.O_APPEND
-	p := n.path()
-	f, err := syscall.Open(p, int(flags), 0)
+	path, ok := n.path()
+	if !ok {
+		return nil, 0, syscall.EINTR
+	}
+	f, err := syscall.Open(path, int(flags), 0)
 	if err != nil {
-		if errors.Is(err, syscall.ENOENT) && n.Orphan() {
-			return nil, 0, syscall.EINTR
-		}
+		/*
+			if errors.Is(err, syscall.ENOENT) {
+				_, ok = n.path()
+				if !ok {
+					return nil, 0, syscall.EINTR
+				}
+			}
+		*/
 		return nil, 0, ToErrno(err)
 	}
 	lf := NewLoopbackFile(f)
@@ -328,7 +397,11 @@ func (n *LoopbackNode) Open(ctx context.Context, flags uint32) (fh FileHandle, f
 }
 
 func (n *LoopbackNode) Opendir(ctx context.Context) syscall.Errno {
-	fd, err := syscall.Open(n.path(), syscall.O_DIRECTORY, 0755)
+	path, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
+	fd, err := syscall.Open(path, syscall.O_DIRECTORY, 0755)
 	if err != nil {
 		return ToErrno(err)
 	}
@@ -337,7 +410,11 @@ func (n *LoopbackNode) Opendir(ctx context.Context) syscall.Errno {
 }
 
 func (n *LoopbackNode) Readdir(ctx context.Context) (DirStream, syscall.Errno) {
-	return NewLoopbackDirStream(n.path())
+	path, ok := n.path()
+	if !ok {
+		return nil, syscall.EINTR
+	}
+	return NewLoopbackDirStream(path)
 }
 
 func (n *LoopbackNode) Getattr(ctx context.Context, f FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -345,7 +422,10 @@ func (n *LoopbackNode) Getattr(ctx context.Context, f FileHandle, out *fuse.Attr
 		return f.(FileGetattrer).Getattr(ctx, out)
 	}
 
-	p := n.path()
+	p, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
 
 	var err error
 	st := syscall.Stat_t{}
@@ -365,7 +445,10 @@ func (n *LoopbackNode) Getattr(ctx context.Context, f FileHandle, out *fuse.Attr
 var _ = (NodeSetattrer)((*LoopbackNode)(nil))
 
 func (n *LoopbackNode) Setattr(ctx context.Context, f FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
-	p := n.path()
+	p, ok := n.path()
+	if !ok {
+		return syscall.EINTR
+	}
 	fsa, ok := f.(FileSetattrer)
 	if ok && fsa != nil {
 		fsa.Setattr(ctx, in, out)
